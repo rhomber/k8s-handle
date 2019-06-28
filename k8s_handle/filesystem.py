@@ -3,7 +3,9 @@ import logging
 import os
 import tempfile
 
-import yaml
+import yaml, os
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from jinja2.exceptions import TemplateNotFound, TemplateSyntaxError, UndefinedError
 
 from k8s_handle.exceptions import InvalidYamlError
 
@@ -11,11 +13,14 @@ from k8s_handle.exceptions import InvalidYamlError
 # maybe we should pass os.remove failure silently, it doesn't seem so important
 log = logging.getLogger(__name__)
 
+tenv = Environment(
+  undefined=StrictUndefined,
+  loader=FileSystemLoader(['.']))
 
 def load_yaml(path):
     try:
-        with open(path) as f:
-            return yaml.safe_load(f.read())
+        tmpl = tenv.get_template(path) 
+        return yaml.safe_load(tmpl.render(env=os.environ))
     except Exception as e:
         raise InvalidYamlError("file '{}' doesn't contain valid yaml: {}".format(
             path, e))

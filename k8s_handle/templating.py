@@ -130,14 +130,16 @@ class Renderer:
         new_name = item['template'].replace('.j2', '')
         path = os.path.join(directory, new_name)
 
-        env_ctx = {'env': os.environ}
+        final_ctx = {'env': os.environ}
+        if context is not None:
+          final_ctx.update(context)
 
         try:
             if not os.path.exists(os.path.dirname(path)):
                 os.makedirs(os.path.dirname(path))
 
             with open(path, 'w+') as f:
-                f.write(template.render({**context, **env_ctx}))
+                f.write(template.render(final_ctx))
 
         except TemplateRenderingError:
             raise

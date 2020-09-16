@@ -3,7 +3,6 @@ import logging
 import semver
 
 from k8s_handle.templating import get_template_contexts
-from k8s_handle.exceptions import DeprecationError
 
 log = logging.getLogger(__name__)
 
@@ -13,15 +12,95 @@ class ApiDeprecationChecker:
         self.server_version = server_version
         self.deprecated_versions = {
             "extensions/v1beta1": {
-                "since": "1.8.0",
-                "until": "",
-                "resources": [
-                    "Deployment",
-                    "DaemonSet",
-                    "ReplicaSet",
-                    "StatefulSet",
-                ],
-            }
+                "Deployment": {
+                    "since": "1.8.0",
+                    "until": "1.16.0",
+                },
+                "DaemonSet": {
+                    "since": "1.8.0",
+                    "until": "1.16.0",
+                },
+                "ReplicaSet": {
+                    "since": "1.8.0",
+                    "until": "1.16.0",
+                },
+                "NetworkPolicy": {
+                    "since": "1.9.0",
+                    "until": "1.16.0",
+                },
+                "PodSecurityPolicy": {
+                    "since": "1.10.0",
+                    "until": "1.16.0",
+                },
+                "Ingress": {
+                    "since": "1.14.0",
+                    "until": "1.20.0",
+                },
+            },
+            "apps/v1beta1": {
+                "Deployment": {
+                    "since": "1.9.0",
+                    "until": "1.16.0",
+                },
+                "DaemonSet": {
+                    "since": "1.9.0",
+                    "until": "1.16.0",
+                },
+                "ReplicaSet": {
+                    "since": "1.9.0",
+                    "until": "1.16.0",
+                },
+                "StatefulSet": {
+                    "since": "1.9.0",
+                    "until": "1.16.0",
+                },
+            },
+            "apps/v1beta2": {
+                "Deployment": {
+                    "since": "1.9.0",
+                    "until": "1.16.0",
+                },
+                "DaemonSet": {
+                    "since": "1.9.0",
+                    "until": "1.16.0",
+                },
+                "ReplicaSet": {
+                    "since": "1.9.0",
+                    "until": "1.16.0",
+                },
+                "StatefulSet": {
+                    "since": "1.9.0",
+                    "until": "1.16.0",
+                },
+            },
+            "scheduling.k8s.io/v1alpha1": {
+                "PriorityClass": {
+                    "since": "1.14.0",
+                    "until": "1.17.0",
+                },
+            },
+            "scheduling.k8s.io/v1beta1": {
+                "PriorityClass": {
+                    "since": "1.14.0",
+                    "until": "1.17.0",
+                },
+            },
+            "apiextensions.k8s.io/v1beta1": {
+                "CustomResourceDefinition": {
+                    "since": "1.16.0",
+                    "until": "1.19.0",
+                },
+            },
+            "admissionregistration.k8s.io/v1beta1": {
+                "MutatingWebhookConfiguration": {
+                    "since": "1.16.0",
+                    "until": "1.19.0",
+                },
+                "ValidatingWebhookConfiguration": {
+                    "since": "1.16.0",
+                    "until": "1.19.0",
+                },
+            },
         }
 
     def _is_server_version_greater(self, checked_version):
@@ -37,34 +116,28 @@ class ApiDeprecationChecker:
    █████  █████   is {status} since {k8s_version}
   ██████████████
                   """
-        if api_version not in self.deprecated_versions.keys():
+        if api_version not in self.deprecated_versions:
             return False
 
-        if kind not in self.deprecated_versions[api_version].get("resources"):
+        if kind not in self.deprecated_versions[api_version]:
             return False
 
-        if self.deprecated_versions[api_version]["until"]:
-            if self._is_server_version_greater(self.deprecated_versions[api_version]["until"]):
+        if self.deprecated_versions[api_version][kind]["until"]:
+            if self._is_server_version_greater(self.deprecated_versions[api_version][kind]["until"]):
                 log.warning(message.format(
                     api_version=api_version,
                     kind=kind,
                     status="unsupported",
-                    k8s_version=self.deprecated_versions[api_version]["until"],
+                    k8s_version=self.deprecated_versions[api_version][kind]["until"],
                 ))
-                raise DeprecationError(
-                    "Version {} for resourse type '{}' is unsupported since kubernetes {}".format(
-                        api_version,
-                        kind,
-                        self.deprecated_versions[api_version]["until"]
-                    )
-                )
+                return True
 
-        if self._is_server_version_greater(self.deprecated_versions[api_version]["since"]):
+        if self._is_server_version_greater(self.deprecated_versions[api_version][kind]["since"]):
             log.warning(message.format(
                 api_version=api_version,
                 kind=kind,
                 status="deprecated",
-                k8s_version=self.deprecated_versions[api_version]["since"],
+                k8s_version=self.deprecated_versions[api_version][kind]["since"],
             ))
             return True
 

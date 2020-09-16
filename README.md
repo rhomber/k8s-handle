@@ -122,7 +122,7 @@ INFO:k8s.resource:Deployment "k8s-starter-kit" does not exist, create it
 ```
 
 # Usage with CI/CD tools
-If you using Gitlab CI, TeamCity or something else, you can use docker runner/agent, script will slightly different: 
+If you are using Gitlab CI, TeamCity or something else, you can use docker runner/agent, script will be slightly different: 
 ```bash
 $ k8s-handle deploy -s staging
 ```
@@ -130,7 +130,7 @@ Configure checkout for https://github.com/2gis/k8s-handle-example.git and specif
 Also you need to setup next env vars:
 * K8S_NAMESPACE
 * K8S_MASTER_URI
-* K8S_CA_BASE64
+* K8S_CA_BASE64 (optional)
 * K8S_TOKEN
 
 use image 2gis/k8s-handle:<version or latest>
@@ -276,6 +276,7 @@ Templates in k8s-handle use jinja2 syntax and support all standard filters + som
 * `{{ my_var | b64encode }}` - encode value of my_var to base64
 * `{{ my_var | b64decode }}` - decode value of my_var from base64
 * `{{ my_var | hash_sha256 }}` - encode value of my_var to sha256sum
+* `{{ my_var | to_yaml(flow_style=True, width=99999) }}` - Tries to render yaml representation of given variable(flow_style=True - render in one line, False multiline. width - max line width for rendered yaml lines) 
 > Warning: You can use filters only for templates and can't for config.yaml
 ### Functions
 * `{{ include_file('my_file.txt') }}` - include my_file.txt to resulting resource w/o parsing it, useful for include configs to configmap.
@@ -287,7 +288,8 @@ templates
 my_file.txt
 ...
 ``` 
-> Note, `include_file` also support unix glob. You can import all files from directory conf.d/*.conf for example.
+* `{{ list_files('dir/or/glob*') }}` - returns list of files in specified directory. Useful for including all files in folder to configmap. You specify directory path relative to parent of templates folder.
+> Note, both fuctions support unix glob. You can import all files from directory `conf.d/*.conf` for example.
 
 You can put *.j2 templates in 'templates' directory and specify it in config.yaml
 ```yaml
@@ -311,6 +313,15 @@ production-zone-1:
   templates:
   - template: my-deployment.yaml.j2
 ```
+
+You can use regular expressions (not glob) for templates selection in TEMPLATES_DIR:
+```yaml
+cluster-1:
+  ...
+  templates:
+  - template: dir-1/.* # All files at TEMPLATES_DIR/dir-1 will be recognised as template and rendered
+```
+
 ### Template loader path 
 k8s-handle uses jinja2 template engine and initializes it with base folder specified in the TEMPLATES_DIR env variable.
 Jinja environment considers template paths as specified relatively to its base init directory. 
@@ -358,6 +369,22 @@ Command line keys `--tags` and `--skip-tags` can be specified multiple times, fo
 ```
 k8s-handle deploy --section production --tags=tag1 --tags=tag2 --tags=tag3
 ```
+
+### Groups
+You can make groups for templates. For example:
+```yaml
+production:
+  templates:
+  - group:
+    - template: my-configmap.yaml.j2
+    - template: my-deployment.yaml.j2
+    - template: my-service.yaml.j2
+    tags: service-one
+  - group:
+    - template: my-job.yaml.j2
+```
+It is useful for creating different sets of templates for other environments, or tag a bunch of templates at once
+
 ## Variables
 ### Required parameters
 k8s-handle needs several parameters to be set in order to connect to k8s, such as:

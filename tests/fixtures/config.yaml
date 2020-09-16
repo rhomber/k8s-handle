@@ -33,6 +33,7 @@ test_dirs:
     - template: template3.yaml.j2
     - template: template_include_file.yaml.j2
     - template: innerdir/template1.yaml.j2
+    - template: template_list_files.yaml.j2
 
 no_templates:
   templates:
@@ -61,6 +62,33 @@ not_existent_template:
   templates:
   - template: doesnotexist.yaml.j2
 
+templates_regex:
+  templates:
+    - template: innerdir/.*\.j2
+    - template: template1.yaml.j2
+
+templates_regex_invalid:
+  templates:
+    - template: '['
+    - template: template1.yaml.j2
+
+test_filters:
+  to_base64: hello world
+  from_base64: azhzLWhhbmRsZQ==
+  to_sha256: k8s-hanle
+  affinity:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "monitoring"
+      effect: "NoSchedule"
+    - key: "dedicated"
+      operator: "Equal"
+      value:
+        hello: world
+      effect: "NoSchedule"
+  templates:
+    - template: filters.yaml.j2
+
 section_with_kubectl:
   dirs:
     - dst: /tmp/test_directory1/
@@ -70,3 +98,11 @@ section_with_kubectl:
     - template: template2.yaml.j2
     - template: template3.yaml.j2
     - template: innerdir/template1.yaml.j2
+
+test_groups:
+  templates:
+    - template: template1.yaml.j2
+    - group:
+        - group:
+            - template: template2.yaml.j2
+        - template: template3.yaml.j2

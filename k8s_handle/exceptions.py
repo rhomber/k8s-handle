@@ -2,7 +2,7 @@ class ProvisioningError(Exception):
     pass
 
 
-class DeprecationError(Exception):
+class ResourceNotAvailableError(Exception):
     pass
 
 

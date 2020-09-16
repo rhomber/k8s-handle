@@ -28,10 +28,13 @@ class Adapter:
         'storage.k8s.io/v1': client.StorageV1Api,
         'apps/v1': client.AppsV1Api,
         'autoscaling/v1': client.AutoscalingV1Api,
+        'autoscaling/v2beta2': client.AutoscalingV2beta2Api,
         'rbac.authorization.k8s.io/v1': client.RbacAuthorizationV1Api,
         'scheduling.k8s.io/v1alpha1': client.SchedulingV1alpha1Api,
         'scheduling.k8s.io/v1beta1': client.SchedulingV1beta1Api,
+        'scheduling.k8s.io/v1': client.SchedulingV1Api,
         'networking.k8s.io/v1': client.NetworkingV1Api,
+        'networking.k8s.io/v1beta1': client.NetworkingV1beta1Api,
         'apiextensions.k8s.io/v1beta1': client.ApiextensionsV1beta1Api,
     }
     kinds_builtin = [
@@ -138,8 +141,8 @@ class AdapterBuiltinKind(Adapter):
             raise ProvisioningError(e)
         except ValueError as e:
             log.error(e)
-            # WORKAROUND https://github.com/kubernetes-client/gen/issues/52
-            if self.kind not in ['custom_resource_definition']:
+            # WORKAROUND https://github.com/kubernetes-client/gen/issues/52, https://github.com/kubernetes-client/python/issues/1098
+            if self.kind not in ['custom_resource_definition', 'horizontal_pod_autoscaler']:
                 raise e
 
     def replace(self, parameters):

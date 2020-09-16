@@ -11,10 +11,11 @@ from kubernetes.config import list_kube_config_contexts, load_kube_config
 from k8s_handle import config
 from k8s_handle import settings
 from k8s_handle import templating
-from k8s_handle.exceptions import DeprecationError, ProvisioningError
+from k8s_handle.exceptions import ProvisioningError, ResourceNotAvailableError
 from k8s_handle.filesystem import InvalidYamlError
 from k8s_handle.k8s.deprecation_checker import ApiDeprecationChecker
 from k8s_handle.k8s.provisioner import Provisioner
+from k8s_handle.k8s.availability_checker import ResourceAvailabilityChecker, make_resource_getters_list
 
 COMMAND_DEPLOY = 'deploy'
 COMMAND_DESTROY = 'destroy'
@@ -104,14 +105,20 @@ def _handler_provision(command, resources, priority_evaluator, use_kubeconfig, s
         log.info("Default namespace is not set. "
                  "This may lead to provisioning error, if namespace is not set for each resource.")
 
-    d = ApiDeprecationChecker(client.VersionApi().get_code().git_version[1:])
-    p = Provisioner(command, sync_mode, show_logs)
+    try:
+        deprecation_checker = ApiDeprecationChecker(client.VersionApi().get_code().git_version[1:])
+        available_checker = ResourceAvailabilityChecker(make_resource_getters_list())
+
+        for resource in resources:
+            deprecation_checker.run(resource)
+            available_checker.run(resource)
+    except client.api_client.ApiException:
+        log.warning("Error while getting API version, deprecation check will be skipped.")
+
+    provisioner = Provisioner(command, sync_mode, show_logs)
 
     for resource in resources:
-        d.run(resource)
-
-    for resource in resources:
-        p.run(resource)
+        provisioner.run(resource)
 
 
 parser = argparse.ArgumentParser(description='CLI utility generate k8s resources by templates and apply it to cluster')
@@ -223,11 +230,11 @@ def main():
     except InvalidYamlError as e:
         log.error('{}'.format(e))
         sys.exit(1)
-    except DeprecationError as e:
-        log.error('Deprecation warning: {}'.format(e))
-        sys.exit(1)
     except RuntimeError as e:
         log.error('RuntimeError: {}'.format(e))
+        sys.exit(1)
+    except ResourceNotAvailableError as e:
+        log.error('Resource not available: {}'.format(e))
         sys.exit(1)
     except ProvisioningError:
         sys.exit(1)

@@ -3,6 +3,7 @@ import glob
 import itertools
 import logging
 import os
+import re
 from hashlib import sha256
 
 import yaml
@@ -58,15 +59,27 @@ def hash_sha256(string):
     return res.hexdigest()
 
 
+def to_yaml(data, flow_style=True, width=99999):
+    return yaml.safe_dump(data, default_flow_style=flow_style, width=width)
+
+
 def get_env(templates_dir):
     # https://stackoverflow.com/questions/9767585/insert-static-files-literally-into-jinja-templates-without-parsing-them
     def include_file(path):
         path = os.path.join(templates_dir, '../', path)
         output = []
-        for file_path in glob.glob(path):
+        for file_path in sorted(glob.glob(path)):
             with open(file_path, 'r') as f:
                 output.append(f.read())
         return '\n'.join(output)
+
+    def list_files(path):
+        path = os.path.join(templates_dir, '../', path)
+        if os.path.isdir(path):
+            files = [os.path.join(path, f) for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+        else:
+            files = glob.glob(path)
+        return sorted(files)
 
     env = Environment(
         undefined=StrictUndefined,
@@ -75,7 +88,9 @@ def get_env(templates_dir):
     env.filters['b64decode'] = b64decode
     env.filters['b64encode'] = b64encode
     env.filters['hash_sha256'] = hash_sha256
+    env.filters['to_yaml'] = to_yaml
     env.globals['include_file'] = include_file
+    env.globals['list_files'] = list_files
 
     log.debug('Available templates in path {}: {}'.format(templates_dir, env.list_templates()))
     return env
@@ -88,23 +103,51 @@ class Renderer:
         self._tags_skip = tags_skip
         self._env = get_env(self._templates_dir)
 
+    def _iterate_entries(self, entries, tags=None):
+        if tags is None:
+            tags = set()
+
+        for entry in entries:
+            entry["tags"] = self._get_template_tags(entry).union(tags)
+
+            if "group" not in entry.keys():
+                if not self._evaluate_tags(entry.get("tags"), self._tags, self._tags_skip):
+                    continue
+                yield entry
+
+            for nested_entry in self._iterate_entries(entry.get("group", []), entry.get("tags")):
+                yield nested_entry
+
+    def _preprocess_templates(self, templates):
+        output = []
+        for template in templates:
+            tags = template.get('tags', [])
+            new_templates = []
+            try:
+                regex = re.compile(template.get('template'))
+                new_templates = list(
+                    map(lambda x: {'template': x, 'tags': tags}, filter(regex.search, self._env.list_templates())))
+            except Exception as e:
+                log.warning(f'Exception during preprocess {template}, {e}, passing it as is')
+
+            if len(new_templates) == 0:
+                output.append(template)
+            else:
+                output += new_templates
+        return output
+
     def generate_by_context(self, context):
         if context is None:
             raise RuntimeError('Can\'t generate templates from None context')
 
-        templates = context.get('templates', [])
+        templates = self._preprocess_templates(context.get('templates', []))
         if len(templates) == 0:
             templates = context.get('kubectl', [])
             if len(templates) == 0:
                 return
 
-        templates = filter(
-            lambda i: self._evaluate_tags(self._get_template_tags(i), self._tags, self._tags_skip),
-            templates
-        )
-
         output = []
-        for template in templates:
+        for template in self._iterate_entries(templates):
             try:
                 path = self._generate_file(template, settings.TEMP_DIR, context)
                 log.info('File "{}" successfully generated'.format(path))
@@ -151,7 +194,7 @@ class Renderer:
     @staticmethod
     def _get_template_tags(template):
         if 'tags' not in template:
-            return {'untagged'}
+            return set()
 
         tags = template['tags']
 
@@ -165,4 +208,10 @@ class Renderer:
 
     @staticmethod
     def _evaluate_tags(tags, only_tags, skip_tags):
-        return tags.isdisjoint(skip_tags or []) and not tags.isdisjoint(only_tags or tags)
+        if only_tags and tags.isdisjoint(only_tags):
+            return False
+
+        if skip_tags and not tags.isdisjoint(skip_tags):
+            return False
+
+        return True

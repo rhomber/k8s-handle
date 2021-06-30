@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import argparse
 import logging
 import os
@@ -15,9 +13,11 @@ from k8s_handle.exceptions import ProvisioningError, ResourceNotAvailableError
 from k8s_handle.filesystem import InvalidYamlError
 from k8s_handle.k8s.deprecation_checker import ApiDeprecationChecker
 from k8s_handle.k8s.provisioner import Provisioner
+from k8s_handle.k8s.diff import Diff
 from k8s_handle.k8s.availability_checker import ResourceAvailabilityChecker, make_resource_getters_list
 
 COMMAND_DEPLOY = 'deploy'
+COMMAND_DIFF = 'diff'
 COMMAND_DESTROY = 'destroy'
 
 log = logging.getLogger(__name__)
@@ -47,6 +47,10 @@ def handler_render(args):
         args.get('tags'),
         args.get('skip_tags')
     ).generate_by_context(context)
+
+
+def handler_diff(args):
+    _handler_deploy_destroy(args, COMMAND_DIFF)
 
 
 def _handler_deploy_destroy(args, command):
@@ -112,13 +116,16 @@ def _handler_provision(command, resources, priority_evaluator, use_kubeconfig, s
         for resource in resources:
             deprecation_checker.run(resource)
             available_checker.run(resource)
-    except client.api_client.ApiException:
+    except client.exceptions.ApiException:
         log.warning("Error while getting API version, deprecation check will be skipped.")
 
-    provisioner = Provisioner(command, sync_mode, show_logs)
+    if command == COMMAND_DIFF:
+        executor = Diff()
+    else:
+        executor = Provisioner(command, sync_mode, show_logs)
 
     for resource in resources:
-        provisioner.run(resource)
+        executor.run(resource)
 
 
 parser = argparse.ArgumentParser(description='CLI utility generate k8s resources by templates and apply it to cluster')
@@ -188,6 +195,12 @@ parser_template = subparsers.add_parser('render', parents=[parser_target_config]
                                              'Created resources will be placed into the TEMP_DIR')
 parser_template.set_defaults(func=handler_render)
 
+parser_diff = subparsers.add_parser('diff', parents=[parser_target_config],
+                                    help='Show diff between current rendered yamls and apiserver yamls')
+parser_diff.add_argument('--use-kubeconfig', action='store_true', required=False,
+                         help='Try to use kube config')
+parser_diff.set_defaults(func=handler_diff)
+
 
 def main():
     # INFO furiousassault: backward compatibility rough attempt
@@ -248,7 +261,3 @@ def main():
            \ |     \ |/       | / \ | /  \|/       |/    \|      \|/
             \|//    \|///    \|//  \|/// \|///    \|//    |//    \|//
        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^''')
-
-
-if __name__ == '__main__':
-    main()

@@ -36,6 +36,7 @@ class Adapter:
         'networking.k8s.io/v1': client.NetworkingV1Api,
         'networking.k8s.io/v1beta1': client.NetworkingV1beta1Api,
         'apiextensions.k8s.io/v1beta1': client.ApiextensionsV1beta1Api,
+        'apiextensions.k8s.io/v1': client.ApiextensionsV1Api,
     }
     kinds_builtin = [
         'ConfigMap', 'CronJob', 'DaemonSet', 'Deployment', 'Endpoints',
@@ -141,24 +142,28 @@ class AdapterBuiltinKind(Adapter):
             raise ProvisioningError(e)
         except ValueError as e:
             log.error(e)
-            # WORKAROUND https://github.com/kubernetes-client/gen/issues/52, https://github.com/kubernetes-client/python/issues/1098
+            # WORKAROUND:
+            # - https://github.com/kubernetes-client/gen/issues/52
+            # - https://github.com/kubernetes-client/python/issues/1098
             if self.kind not in ['custom_resource_definition', 'horizontal_pod_autoscaler']:
                 raise e
 
     def replace(self, parameters):
         try:
-            if self.kind in ['custom_resource_definition', 'pod_disruption_budget']:
-                self.body['metadata']['resourceVersion'] = parameters['resourceVersion']
+            if self.kind in ['service', 'custom_resource_definition', 'pod_disruption_budget']:
+                if 'resourceVersion' in parameters:
+                    self.body['metadata']['resourceVersion'] = parameters['resourceVersion']
+
+            if self.kind in ['service']:
+                if 'clusterIP' not in self.body['spec'] and 'clusterIP' in parameters:
+                    self.body['spec']['clusterIP'] = parameters['clusterIP']
 
             if self.kind in ['custom_resource_definition']:
                 return self.api.replace_custom_resource_definition(
                     self.name, self.body,
                 )
 
-            if self.kind in ['service', 'service_account']:
-                if 'spec' in self.body:
-                    self.body['spec']['ports'] = parameters.get('ports')
-
+            if self.kind in ['service_account']:
                 return getattr(self.api, 'patch_namespaced_{}'.format(self.kind))(
                     name=self.name, body=self.body, namespace=self.namespace
                 )
@@ -273,12 +278,12 @@ class AdapterCustomKind(Adapter):
             if self.namespace:
                 return self.api.delete_namespaced_custom_object(
                     self.group, self.version, self.namespace, self.plural, self.name,
-                    client.V1DeleteOptions(propagation_policy='Foreground')
+                    body=client.V1DeleteOptions(propagation_policy='Foreground')
                 )
 
             return self.api.delete_cluster_custom_object(
                 self.group, self.version, self.plural, self.name,
-                client.V1DeleteOptions(propagation_policy='Foreground')
+                body=client.V1DeleteOptions(propagation_policy='Foreground')
             )
 
         except ApiException as e:
@@ -289,16 +294,19 @@ class AdapterCustomKind(Adapter):
                 '{}'.format(add_indent(e.body)))
             raise ProvisioningError(e)
 
-    def replace(self, _):
+    def replace(self, parameters):
         self._validate()
+
+        if 'resourceVersion' in parameters:
+            self.body['metadata']['resourceVersion'] = parameters['resourceVersion']
 
         try:
             if self.namespace:
-                return self.api.patch_namespaced_custom_object(
+                return self.api.replace_namespaced_custom_object(
                     self.group, self.version, self.namespace, self.plural, self.name, self.body
                 )
 
-            return self.api.patch_cluster_custom_object(
+            return self.api.replace_cluster_custom_object(
                 self.group, self.version, self.plural, self.name, self.body
             )
         except ApiException as e:
